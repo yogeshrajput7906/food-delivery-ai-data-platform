@@ -51,3 +51,46 @@ def load_marts() -> dict[str, pd.DataFrame]:
     with get_connection(role=AI_READONLY_ROLE, schema="MARTS") as conn:
         return {name: fetch_dataframe(conn, sql) for name, sql in queries.items()}
 
+
+st.title("Zomato operations dashboard")
+st.caption("Gold-layer marts, built by dbt and refreshed by the daily `zomato_batch` DAG.")
+
+try:
+    data = load_marts()
+except ConfigError as exc:
+    st.error(str(exc))
+    st.stop()
+except Exception as exc:  # noqa: BLE001
+    st.error(
+        f"Could not read the marts: {exc}\n\n"
+        "If a table is missing, run `make pipeline` or trigger the `zomato_batch` DAG. "
+        "`mart_review_insights` only exists after the AI enrichment step has run."
+    )
+    st.stop()
+
+revenue = data["revenue"]
+sla = data["sla"]
+restaurants = data["restaurants"]
+reviews = data["reviews"]
+
+if revenue.empty:
+    st.warning("The marts are empty. Load some data first.")
+    st.stop()
+
+# ---------------------------------------------------------------------------
+# Headline KPIs
+# ---------------------------------------------------------------------------
+total_gmv = revenue["gmv"].sum()
+total_orders = revenue["orders"].sum()
+delivered = revenue["delivered_orders"].sum()
+overall_cancel_rate = revenue["cancelled_orders"].sum() / total_orders if total_orders else 0
+overall_aov = total_gmv / delivered if delivered else 0
+
+col1, col2, col3, col4 = st.columns(4)
+col1.metric("GMV (delivered)", f"₹{total_gmv:,.0f}")
+col2.metric("Orders", f"{total_orders:,.0f}")
+col3.metric("Average order value", f"₹{overall_aov:,.2f}")
+col4.metric("Cancel rate", f"{overall_cancel_rate:.2%}")
+
+st.divider()
+
