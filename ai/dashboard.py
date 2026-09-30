@@ -154,3 +154,54 @@ with right:
         use_container_width=True,
     )
 
+# ---------------------------------------------------------------------------
+# Restaurants
+# ---------------------------------------------------------------------------
+st.subheader("Restaurant leaderboard")
+
+min_orders = st.slider("Minimum orders", 1, 500, 50, step=10)
+leaderboard = (
+    restaurants[restaurants["orders"] >= min_orders]
+    .nlargest(25, "revenue")[
+        ["restaurant_name", "city", "cuisine", "orders", "revenue",
+         "avg_customer_rating", "avg_delivery_min", "cancel_rate"]
+    ]
+)
+st.dataframe(leaderboard, hide_index=True, use_container_width=True)
+
+# ---------------------------------------------------------------------------
+# Review insights (AI)
+# ---------------------------------------------------------------------------
+st.subheader("Review insights (LLM-enriched)")
+
+if reviews.empty:
+    st.info(
+        "No enriched reviews yet. Run `python ai/enrich_reviews.py --sample-n 200`, "
+        "then `dbt build --select tag:ai`."
+    )
+else:
+    pivot = reviews.pivot_table(
+        index="topic", columns="sentiment_label", values="reviews", aggfunc="sum"
+    ).fillna(0)
+    st.bar_chart(pivot)
+
+    left, right = st.columns(2)
+    with left:
+        st.markdown("**Most flagged issues by topic**")
+        st.dataframe(
+            reviews.groupby("topic", as_index=False)
+            .agg(reviews=("reviews", "sum"), flagged_issues=("flagged_issues", "sum"))
+            .sort_values("flagged_issues", ascending=False),
+            hide_index=True,
+            use_container_width=True,
+        )
+    with right:
+        st.markdown("**Sentiment by city**")
+        st.dataframe(
+            reviews.groupby(["city", "sentiment_label"], as_index=False)["reviews"]
+            .sum()
+            .sort_values("reviews", ascending=False)
+            .head(20),
+            hide_index=True,
+            use_container_width=True,
+        )
