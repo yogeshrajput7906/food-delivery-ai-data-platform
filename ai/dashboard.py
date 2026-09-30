@@ -94,3 +94,63 @@ col4.metric("Cancel rate", f"{overall_cancel_rate:.2%}")
 
 st.divider()
 
+# ---------------------------------------------------------------------------
+# GMV trend
+# ---------------------------------------------------------------------------
+st.subheader("GMV trend")
+
+daily = (
+    revenue.assign(order_date=pd.to_datetime(revenue["order_date"]))
+    .groupby("order_date", as_index=False)
+    .agg(gmv=("gmv", "sum"), orders=("orders", "sum"))
+    .sort_values("order_date")
+)
+
+cities = sorted(revenue["city"].dropna().unique())
+selected_cities = st.multiselect("Cities", cities, default=cities[:3])
+
+if selected_cities:
+    city_series = (
+        revenue[revenue["city"].isin(selected_cities)]
+        .assign(order_date=lambda df: pd.to_datetime(df["order_date"]))
+        .pivot_table(index="order_date", columns="city", values="gmv", aggfunc="sum")
+    )
+    st.line_chart(city_series)
+else:
+    st.line_chart(daily.set_index("order_date")["gmv"])
+
+# ---------------------------------------------------------------------------
+# Delivery SLA
+# ---------------------------------------------------------------------------
+st.subheader("Delivery SLA")
+st.caption("p50 and p90 delivery minutes by hour of day. Blank cells mean no delivered orders that hour.")
+
+sla_city = st.selectbox("City", sorted(sla["city"].dropna().unique()))
+city_sla = (
+    sla[sla["city"] == sla_city]
+    .set_index("order_hour")[["p50_delivery_min", "p90_delivery_min"]]
+    .sort_index()
+)
+st.line_chart(city_sla)
+
+left, right = st.columns(2)
+
+with left:
+    st.markdown("**Worst hours by late rate**")
+    st.dataframe(
+        sla[sla["delivered_orders"] >= 50]
+        .nlargest(10, "late_rate")[["city", "order_hour", "delivered_orders", "late_rate"]],
+        hide_index=True,
+        use_container_width=True,
+    )
+
+with right:
+    st.markdown("**Slowest cities (p90)**")
+    st.dataframe(
+        sla.groupby("city", as_index=False)
+        .agg(delivered_orders=("delivered_orders", "sum"), p90=("p90_delivery_min", "mean"))
+        .nlargest(10, "p90"),
+        hide_index=True,
+        use_container_width=True,
+    )
+
